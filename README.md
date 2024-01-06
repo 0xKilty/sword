@@ -1,1 +1,2 @@
-# sword (SomeWhat Of a Recursive Disassembler)
+# sword 🗡️
+> SomeWhat Of a Recursive Disassembler
