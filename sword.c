@@ -4,12 +4,12 @@
 #include <unistd.h>
 #include <elf.h>
 
-Elf32_Ehdr read_elf_file(int file) {
-    Elf32_Ehdr elf_header;
-    ssize_t bytesRead = read(file, &elf_header, sizeof(Elf32_Ehdr));
-    if (bytesRead != sizeof(Elf32_Ehdr)) {
+Elf64_Ehdr read_elf_file(int fd) {
+    Elf64_Ehdr elf_header;
+    ssize_t bytesRead = read(fd, &elf_header, sizeof(Elf64_Ehdr));
+    if (bytesRead != sizeof(Elf64_Ehdr)) {
         perror("read");
-        close(file);
+        close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -19,7 +19,7 @@ Elf32_Ehdr read_elf_file(int file) {
         elf_header.e_ident[EI_MAG2] != ELFMAG2 ||
         elf_header.e_ident[EI_MAG3] != ELFMAG3) {
         fprintf(stderr, "Not an ELF file\n");
-        close(file);
+        close(fd);
         exit(EXIT_FAILURE);
     }
 
@@ -33,74 +33,48 @@ int main(int argc, char *argv[]) {
     }
 
     char *filename = argv[1];
-    int file = open(filename, O_RDONLY);
+    int fd = open(filename, O_RDONLY);
 
-    if (file < 0) {
+    if (fd < 0) {
         perror("open");
         exit(EXIT_FAILURE);
     }
 
-    //Elf32_Ehdr elf_header = read_elf_file(file);
-    Elf32_Ehdr elf_header;
-    ssize_t bytesRead = read(file, &elf_header, sizeof(Elf32_Ehdr));
-    if (bytesRead != sizeof(Elf32_Ehdr)) {
-        perror("read");
-        close(file);
-        exit(EXIT_FAILURE);
-    }
+    Elf64_Ehdr elf_header = read_elf_file(fd);
 
-    // Check magic
-    if (elf_header.e_ident[EI_MAG0] != ELFMAG0 ||
-        elf_header.e_ident[EI_MAG1] != ELFMAG1 ||
-        elf_header.e_ident[EI_MAG2] != ELFMAG2 ||
-        elf_header.e_ident[EI_MAG3] != ELFMAG3) {
-        fprintf(stderr, "Not an ELF file\n");
-        close(file);
-        exit(EXIT_FAILURE);
-    }
+    printf("entry point %lx\n", elf_header.e_entry);
 
-    // Print the values for debugging
-    printf("Elf Header Size: %lu\n", sizeof(Elf32_Ehdr));
-    printf("e_shoff: %u\n", elf_header.e_shoff);
-    printf("e_shnum: %u\n", elf_header.e_shnum);
-    printf("e_shentsize: %u\n", elf_header.e_shentsize);
+    // Read section header
+    Elf64_Shdr section_header;
+    lseek(fd, elf_header.e_shoff + elf_header.e_shstrndx * elf_header.e_shentsize, SEEK_SET);
+    read(fd, &section_header, sizeof(section_header));
 
-    // Check if e_shnum is non-zero
-    if (elf_header.e_shnum == 0) {
-        fprintf(stderr, "No sections found\n");
-        close(file);
-        exit(EXIT_FAILURE);
-    }
+    // Read section names
+    char* section_names = malloc(section_header.sh_size);
+    lseek(fd, section_header.sh_offset, SEEK_SET);
+    read(fd, section_names, section_header.sh_size);
+    
+    // Print section names
+    for (int i = 0; i < elf_header.e_shnum; i++){
+        lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
+        read(fd, &section_header, sizeof(section_header));
 
-    // Move to the start of the section headers
-    lseek(file, elf_header.e_shoff, SEEK_SET);
+        // Check if section is the .text section
+        if (section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_EXECINSTR) {
+            printf("%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
+            unsigned char* text_section_data = (unsigned char*)malloc(section_header.sh_size);
+            if (text_section_data == NULL) {
+                perror("Memory allocation error");
+                exit(EXIT_FAILURE);
+            }
+            lseek(fd, section_header.sh_offset, SEEK_SET);
+            read(fd, text_section_data, section_header.sh_size);
 
-    Elf32_Shdr section_header;
-    for (int i = 0; i < elf_header.e_shnum; ++i) {
-        ssize_t bytesRead = read(file, &section_header, sizeof(Elf32_Shdr));
-        if (bytesRead != sizeof(Elf32_Shdr)) {
-            perror("read");
-            close(file);
-            exit(EXIT_FAILURE);
+            free(text_section_data);
         }
-
-        // Get the name of the section
-        char section_name[256]; // Assuming a maximum section name length of 255
-
-        // Use section_header.sh_offset instead of elf_header.e_shoff
-        lseek(file, section_header.sh_offset + section_header.sh_name, SEEK_SET);
-
-        bytesRead = read(file, section_name, sizeof(section_name));
-        if (bytesRead != sizeof(section_name)) {
-            perror("read");
-            close(file);
-            exit(EXIT_FAILURE);
-        }
-
-        // Print the section name
-        printf("Section Name: %s\n", section_name);
     }
 
-    close(file);
+    free(section_names);
+    close(fd);
     return 0;
 }

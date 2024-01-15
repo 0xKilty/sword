@@ -4,6 +4,8 @@
 #include <string.h>
 #include <math.h>
 
+
+
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <num>\n", argv[0]);
@@ -12,8 +14,9 @@ int main(int argc, char *argv[]) {
 
     int n = atoi(argv[1]);
 
-    bool prime[n + 1];
-    memset(prime, true, sizeof(prime));
+    bool *prime = (bool *) malloc((n + 1) * sizeof(bool));
+
+    memset(prime, true, (n + 1) * sizeof(*prime));
  
     for (int p = 2; p * p <= n; p++) {
         if (prime[p] == true) {
@@ -21,9 +24,12 @@ int main(int argc, char *argv[]) {
                 prime[i] = false;
         }
     }
-     
+
     for (int p = 2; p <= n; p++)
         if (prime[p])
             printf("%d\n",p);
+
+    free(prime);
+
     return 0;
 }
