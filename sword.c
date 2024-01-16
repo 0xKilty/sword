@@ -38,6 +38,14 @@ ___<__(|) _   ""-/  / /   /
 #include <unistd.h>
 #include <string.h>
 #include <elf.h>
+#include <capstone/capstone.h>
+
+bool valid_elf_magic(Elf64_Ehdr elf_header) {
+    return elf_header.e_ident[EI_MAG0] == ELFMAG0 &&
+        elf_header.e_ident[EI_MAG1] == ELFMAG1 &&
+        elf_header.e_ident[EI_MAG2] == ELFMAG2 &&
+        elf_header.e_ident[EI_MAG3] == ELFMAG3;
+}
 
 Elf64_Ehdr read_elf_header(int fd) {
     Elf64_Ehdr elf_header;
@@ -48,11 +56,7 @@ Elf64_Ehdr read_elf_header(int fd) {
         exit(EXIT_FAILURE);
     }
 
-    // Check magic
-    if (elf_header.e_ident[EI_MAG0] != ELFMAG0 ||
-        elf_header.e_ident[EI_MAG1] != ELFMAG1 ||
-        elf_header.e_ident[EI_MAG2] != ELFMAG2 ||
-        elf_header.e_ident[EI_MAG3] != ELFMAG3) {
+    if (!valid_elf_magic(elf_header)) {
         fprintf(stderr, "Not an ELF file\n");
         close(fd);
         exit(EXIT_FAILURE);
@@ -73,6 +77,44 @@ char* get_section_names(int fd, Elf64_Shdr section_header) {
     lseek(fd, section_header.sh_offset, SEEK_SET);
     read(fd, section_names, section_header.sh_size);
     return section_names;
+}
+
+bool section_program_and_executable(Elf64_Shdr section_header) {
+    return section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_EXECINSTR;
+}
+
+unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
+    unsigned char* section_data = (unsigned char*)malloc(section_header.sh_size);
+    if (section_data == NULL) {
+        perror("Memory allocation error");
+        exit(EXIT_FAILURE);
+    }
+    lseek(fd, section_header.sh_offset, SEEK_SET);
+    read(fd, section_data, section_header.sh_size);
+
+    return section_data;
+}
+
+void print_disassembly(unsigned char* section_data, size_t size, unsigned long addr) {
+    csh capstone_handle;
+    if (cs_open(CS_ARCH_X86, CS_MODE_64, &capstone_handle) != CS_ERR_OK) {
+        fprintf(stderr, "Error initializing disassembler\n");
+        exit(EXIT_FAILURE);
+    }
+
+    cs_insn *insn;
+    size_t count = cs_disasm(capstone_handle, section_data, size, addr, 0, &insn);
+    if (count > 0) {
+        for (size_t i = 0; i < count; i++) {
+            printf("0x%" PRIx64 ": %s %s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str);
+        }
+        cs_free(insn, count);
+    } else {
+        fprintf(stderr, "Error disassembling code\n");
+        exit(EXIT_FAILURE);
+    }
+
+    cs_close(&capstone_handle);
 }
 
 int main(int argc, char *argv[]) {
@@ -99,24 +141,14 @@ int main(int argc, char *argv[]) {
         read(fd, &section_header, sizeof(section_header));
 
         // Check if section is the .text section
-        if (section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_EXECINSTR) {
-            // Print the section name along with the addr
+        if (section_program_and_executable(section_header)) {
             printf("\n%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
 
-            // Read the hex data
-            unsigned char* text_section_data = (unsigned char*)malloc(section_header.sh_size);
-            if (text_section_data == NULL) {
-                perror("Memory allocation error");
-                exit(EXIT_FAILURE);
-            }
-            lseek(fd, section_header.sh_offset, SEEK_SET);
-            read(fd, text_section_data, section_header.sh_size);
+            unsigned char* section_data = read_section_data(fd, section_header);
+            printf("\n");
+            print_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
 
-            for (int j = 0; j < section_header.sh_size; j++) {
-                printf("%x ", text_section_data[j]);
-            }
-
-            free(text_section_data);
+            free(section_data);
         }
     }
 
