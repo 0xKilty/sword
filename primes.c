@@ -4,7 +4,7 @@
 #include <string.h>
 #include <math.h>
 
-
+const char str[] = "Hello from the .rodata section\n";
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -24,6 +24,8 @@ int main(int argc, char *argv[]) {
                 prime[i] = false;
         }
     }
+
+    printf("%s", str);
 
     for (int p = 2; p <= n; p++)
         if (prime[p])

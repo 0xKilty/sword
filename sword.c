@@ -83,6 +83,14 @@ bool section_program_and_executable(Elf64_Shdr section_header) {
     return section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_EXECINSTR;
 }
 
+bool section_program_and_writable(Elf64_Shdr section_header) {
+    return section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_WRITE;
+}
+
+bool section_program_and_read_only(Elf64_Shdr section_header) {
+    return section_header.sh_type == SHT_PROGBITS && !(section_header.sh_flags & SHF_WRITE);
+}
+
 unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
     unsigned char* section_data = (unsigned char*)malloc(section_header.sh_size);
     if (section_data == NULL) {
@@ -135,19 +143,25 @@ int main(int argc, char *argv[]) {
     Elf64_Shdr section_header = read_section_header(fd, elf_header);
     char* section_names = get_section_names(fd, section_header);
     
-    // Print section names
     for (int i = 0; i < elf_header.e_shnum; i++){
         lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
         read(fd, &section_header, sizeof(section_header));
 
-        // Check if section is the .text section
         if (section_program_and_executable(section_header)) {
             printf("\n%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
 
             unsigned char* section_data = read_section_data(fd, section_header);
             printf("\n");
             print_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
+            free(section_data);
+            
+        } else if (section_program_and_read_only(section_header)) {
+            printf("\n%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
 
+            unsigned char* section_data = read_section_data(fd, section_header);
+            for (int j = 0; j < section_header.sh_size; j++) {
+                printf("%c", section_data[j]);
+            }
             free(section_data);
         }
     }
