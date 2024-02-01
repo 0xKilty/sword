@@ -147,25 +147,19 @@ int main(int argc, char *argv[]) {
         lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
         read(fd, &section_header, sizeof(section_header));
 
+        unsigned char* section_data = read_section_data(fd, section_header);
+        if (section_header.sh_type == SHT_PROGBITS && (section_header.sh_flags & SHF_EXECINSTR || !(section_header.sh_flags & SHF_WRITE))) {
+            printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
+        }
         if (section_program_and_executable(section_header)) {
-            printf("\n%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
-
-            unsigned char* section_data = read_section_data(fd, section_header);
-            printf("\n");
             print_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
-            free(section_data);
-            
         } else if (section_program_and_read_only(section_header)) {
-            printf("\n%s 0x%lx\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
-
-            unsigned char* section_data = read_section_data(fd, section_header);
             for (int j = 0; j < section_header.sh_size; j++) {
                 printf("%c", section_data[j]);
             }
-            free(section_data);
         }
+        free(section_data);
     }
-
     printf("\n");
     free(section_names);
     close(fd);
