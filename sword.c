@@ -103,6 +103,14 @@ unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
     return section_data;
 }
 
+void bytes_to_hex_string(char* hex_string, unsigned char* bytes) {
+    for (int i = 0; i < sizeof(bytes); i++) {
+        if (bytes[i] == '\0')
+            break;
+        sprintf(hex_string + 3 * i, "%02x ", bytes[i]);
+    }
+}
+
 void print_disassembly(unsigned char* section_data, size_t size, unsigned long addr) {
     csh capstone_handle;
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &capstone_handle) != CS_ERR_OK) {
@@ -114,7 +122,11 @@ void print_disassembly(unsigned char* section_data, size_t size, unsigned long a
     size_t count = cs_disasm(capstone_handle, section_data, size, addr, 0, &insn);
     if (count > 0) {
         for (size_t i = 0; i < count; i++) {
-            printf("0x%" PRIx64 ": %s %s\n", insn[i].address, insn[i].mnemonic, insn[i].op_str);
+            char hex_string[3 * (sizeof(insn[i].bytes) / sizeof(insn[i].bytes[0])) + 1];
+            bytes_to_hex_string(hex_string, insn[i].bytes);
+            char* red_color = "\033[31m";
+            char* reset_color = "\033[0m";
+            printf("%s0x%" PRIx64 ": %-20s %s %s %s\n", red_color, insn[i].address, hex_string, insn[i].mnemonic, insn[i].op_str, reset_color);
         }
         cs_free(insn, count);
     } else {
@@ -148,12 +160,12 @@ int main(int argc, char *argv[]) {
         read(fd, &section_header, sizeof(section_header));
 
         unsigned char* section_data = read_section_data(fd, section_header);
-        if (section_header.sh_type == SHT_PROGBITS && (section_header.sh_flags & SHF_EXECINSTR || !(section_header.sh_flags & SHF_WRITE))) {
-            printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
-        }
+        
         if (section_program_and_executable(section_header)) {
+            printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
             print_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
         } else if (section_program_and_read_only(section_header)) {
+            printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
             for (int j = 0; j < section_header.sh_size; j++) {
                 printf("%c", section_data[j]);
             }
