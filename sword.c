@@ -32,6 +32,12 @@ ___<__(|) _   ""-/  / /   /
     P'
 */
 
+/*
+TODO (Maybe):
+- Add support for portable executables
+- Entropy graph
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -124,9 +130,11 @@ void print_disassembly(unsigned char* section_data, size_t size, unsigned long a
         for (size_t i = 0; i < count; i++) {
             char hex_string[3 * (sizeof(insn[i].bytes) / sizeof(insn[i].bytes[0])) + 1];
             bytes_to_hex_string(hex_string, insn[i].bytes);
-            char* red_color = "\033[31m";
+            char* color = "\033[0m";
+            if (strcmp(insn[i].mnemonic, "call") == 0)
+                color = "\033[31m";
             char* reset_color = "\033[0m";
-            printf("%s0x%" PRIx64 ": %-20s %s %s %s\n", red_color, insn[i].address, hex_string, insn[i].mnemonic, insn[i].op_str, reset_color);
+            printf("%s0x%" PRIx64 ": %-20s %s %s %s\n", color, insn[i].address, hex_string, insn[i].mnemonic, insn[i].op_str, reset_color);
         }
         cs_free(insn, count);
     } else {
@@ -147,11 +155,14 @@ int main(int argc, char *argv[]) {
     int fd = open(filename, O_RDONLY);
 
     if (fd < 0) {
-        perror("open");
+        fprintf(stderr, "Usage: %s <elf_executable>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
     Elf64_Ehdr elf_header = read_elf_header(fd);
+
+    printf("Entry point address 0x%lx\n", (unsigned long)elf_header.e_entry);
+
     Elf64_Shdr section_header = read_section_header(fd, elf_header);
     char* section_names = get_section_names(fd, section_header);
     
