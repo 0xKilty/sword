@@ -55,6 +55,21 @@ void print_section_header(char* section_names, Elf64_Shdr section_header) {
     printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
 }
 
+void print_section_data(Elf64_Shdr section_header, unsigned char* section_data) {
+    /*
+    for (int i = 0; i < section_header.sh_size; i++) {
+        printf("0x%lx: ", (unsigned long)section_header.sh_addr + (i * 8));
+        for (int j = 0; j < 8; j++) {
+            printf("%02x ", section_data[i * j]);
+        }
+        printf("\n");
+    }
+    */
+    for (int i = 0; i < section_header.sh_size; i++) {
+        printf("%c", section_data[i]);
+    }
+}
+
 bool section_program_and_executable(Elf64_Shdr section_header) {
     return section_header.sh_type == SHT_PROGBITS && section_header.sh_flags & SHF_EXECINSTR;
 }

@@ -48,14 +48,21 @@ TODO (Maybe):
 #include "elf_stuff.h"
 
 void bytes_to_hex_string(char* hex_string, unsigned char* bytes) {
-    for (int i = 0; i < sizeof(bytes); i++) {
-        if (bytes[i] == '\0')
-            break;
+    for (int i = 0; bytes[i] != '\0'; i++)
         sprintf(hex_string + 3 * i, "%02x ", bytes[i]);
+}
+
+void print_disassembly_line(cs_insn insn) {
+    char hex_string[3 * (sizeof(insn.bytes) / sizeof(insn.bytes[0])) + 1];
+    bytes_to_hex_string(hex_string, insn.bytes);
+    if (strcmp(insn.mnemonic, "call") == 0) {
+        printf("0x%" PRIx64 ": %-20s %s %s -> %s\n", insn.address, hex_string, insn.mnemonic, insn.op_str, insn.op_str);
+    } else {
+        printf("0x%" PRIx64 ": %-20s %s %s\n", insn.address, hex_string, insn.mnemonic, insn.op_str);
     }
 }
 
-void print_disassembly(unsigned char* section_data, size_t size, unsigned long addr) {
+void print_section_disassembly(unsigned char* section_data, size_t size, unsigned long addr) {
     csh capstone_handle;
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &capstone_handle) != CS_ERR_OK) {
         fprintf(stderr, "Error initializing disassembler\n");
@@ -65,15 +72,8 @@ void print_disassembly(unsigned char* section_data, size_t size, unsigned long a
     cs_insn *insn;
     size_t count = cs_disasm(capstone_handle, section_data, size, addr, 0, &insn);
     if (count > 0) {
-        for (size_t i = 0; i < count; i++) {
-            char hex_string[3 * (sizeof(insn[i].bytes) / sizeof(insn[i].bytes[0])) + 1];
-            bytes_to_hex_string(hex_string, insn[i].bytes);
-            char* color = "\033[0m";
-            if (strcmp(insn[i].mnemonic, "call") == 0)
-                color = "\033[31m";
-            char* reset_color = "\033[0m";
-            printf("%s0x%" PRIx64 ": %-20s %s %s %s\n", color, insn[i].address, hex_string, insn[i].mnemonic, insn[i].op_str, reset_color);
-        }
+        for (size_t i = 0; i < count; i++)
+           print_disassembly_line(insn[i]);
         cs_free(insn, count);
     } else {
         fprintf(stderr, "Error disassembling code\n");
@@ -98,24 +98,22 @@ int main(int argc, char *argv[]) {
 
     Elf64_Ehdr elf_header = read_elf_header(fd);
 
-    // printf("Entry point address 0x%lx\n", (unsigned long)elf_header.e_entry);
+    printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
 
     Elf64_Shdr section_header = read_section_header(fd, elf_header);
     char* section_names = get_section_names(fd, section_header);
     
-    for (int i = 0; i < elf_header.e_shnum; i++){
+    for (int i = 0; i < elf_header.e_shnum; i++) {
         lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
         read(fd, &section_header, sizeof(section_header));
-
         unsigned char* section_data = read_section_data(fd, section_header);
         
         if (section_program_and_executable(section_header)) {
             print_section_header(section_names, section_header);
-            print_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
+            print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
         } else if (section_program_and_read_only(section_header)) {
             print_section_header(section_names, section_header);
-            for (int j = 0; j < section_header.sh_size; j++)
-                printf("%c", section_data[j]);
+            print_section_data(section_header, section_data);
         }
         free(section_data);
     }
