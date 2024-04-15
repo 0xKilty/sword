@@ -52,7 +52,9 @@ unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
 }
 
 void print_section_header(char* section_names, Elf64_Shdr section_header) {
-    printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
+    printf("\n\x1b[1;32m%s\x1b[0m ", section_names + section_header.sh_name);
+    printf("0x%lx ", (unsigned long)section_header.sh_addr);
+    printf("Size: %ld\n\n", (unsigned long)section_header.sh_size);
 }
 
 void print_section_data(Elf64_Shdr section_header, unsigned char* section_data) {

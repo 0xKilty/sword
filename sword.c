@@ -52,14 +52,10 @@ void bytes_to_hex_string(char* hex_string, unsigned char* bytes) {
         sprintf(hex_string + 3 * i, "%02x ", bytes[i]);
 }
 
-void print_disassembly_line(cs_insn insn) {
+void print_disassembly_line(cs_insn insn, int place) {
     char hex_string[3 * (sizeof(insn.bytes) / sizeof(insn.bytes[0])) + 1];
     bytes_to_hex_string(hex_string, insn.bytes);
-    if (strcmp(insn.mnemonic, "call") == 0) {
-        printf("0x%" PRIx64 ": %-20s %s %s -> %s\n", insn.address, hex_string, insn.mnemonic, insn.op_str, insn.op_str);
-    } else {
-        printf("0x%" PRIx64 ": %-20s %s %s\n", insn.address, hex_string, insn.mnemonic, insn.op_str);
-    }
+    printf("%ld 0x%" PRIx64 ": %-20s %s %s\n", insn.address, insn.address, hex_string, insn.mnemonic, insn.op_str);
 }
 
 void print_section_disassembly(unsigned char* section_data, size_t size, unsigned long addr) {
@@ -73,7 +69,7 @@ void print_section_disassembly(unsigned char* section_data, size_t size, unsigne
     size_t count = cs_disasm(capstone_handle, section_data, size, addr, 0, &insn);
     if (count > 0) {
         for (size_t i = 0; i < count; i++)
-           print_disassembly_line(insn[i]);
+           print_disassembly_line(insn[i], i);
         cs_free(insn, count);
     } else {
         fprintf(stderr, "Error disassembling code\n");
@@ -107,12 +103,11 @@ int main(int argc, char *argv[]) {
         lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
         read(fd, &section_header, sizeof(section_header));
         unsigned char* section_data = read_section_data(fd, section_header);
-        
+        print_section_header(section_names, section_header);
+
         if (section_program_and_executable(section_header)) {
-            print_section_header(section_names, section_header);
             print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
         } else if (section_program_and_read_only(section_header)) {
-            print_section_header(section_names, section_header);
             print_section_data(section_header, section_data);
         }
         free(section_data);
