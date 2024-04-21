@@ -35,7 +35,6 @@ ___<__(|) _   ""-/  / /   /
 /*
 TODO (Maybe):
 - Add support for portable executables
-- Entropy graph
 */
 
 #include <stdio.h>
@@ -44,8 +43,11 @@ TODO (Maybe):
 #include <unistd.h>
 #include <string.h>
 #include <elf.h>
+#include <math.h>
 #include <capstone/capstone.h>
 #include "elf_stuff.h"
+
+#define ENTROPY_BUFFER_SIZE 256
 
 void bytes_to_hex_string(char* hex_string, unsigned char* bytes) {
     for (int i = 0; bytes[i] != '\0'; i++)
@@ -79,13 +81,73 @@ void print_section_disassembly(unsigned char* section_data, size_t size, unsigne
     cs_close(&capstone_handle);
 }
 
+float calculate_entropy(int* occurrences, int total_count) {
+    float entropy = 0;
+    for (int i = 0; i < ENTROPY_BUFFER_SIZE; i++) {
+        float probability = (float)occurrences[i] / total_count;
+        if (probability > 0)
+            entropy += probability * log2f(probability);
+    }
+
+    return -entropy;
+}
+
+float calculate_fd_entropy(int fd) {
+    char byte;
+    int occurrences[ENTROPY_BUFFER_SIZE] = {0};
+    int total_count = 0;
+    ssize_t bytesRead;
+
+    lseek(fd, 0, SEEK_SET);
+    while ((bytesRead = read(fd, &byte, 1)) > 0) {
+        occurrences[(unsigned char)byte]++;
+        total_count++;
+    }
+
+    return calculate_entropy(occurrences, total_count);
+}
+
+void print_logo() {
+    const char* figlet = 
+        "   ______       ______  ____  ____ \n"
+        "  / ___/ |     / / __ \\/ __ \\/ __ \\\n"
+        "  \\__ \\| | /| / / / / / /_/ / / / /\n"
+        " ___/ /| |/ |/ / /_/ / _, _/ /_/ / \n"
+        "/____/ |__/|__/\\____/_/ |_/_____/  \n";
+    printf("%s\n", figlet);
+}
+
+extern char *optarg;
+
 int main(int argc, char *argv[]) {
+    int opt;
+    char entropy_flag = 0;
+
+    while ((opt = getopt(argc, argv, "lse")) != -1) {
+        switch (opt) {
+            case 'l':
+                print_logo();
+                break;
+            case 'e':
+                entropy_flag = 1;
+                break;
+            case 's':
+                printf("Option 's'\n");
+                break;
+            case '?':
+                fprintf(stderr, "Usage: %s -a <value> -b <value>\n", argv[0]);
+                exit(EXIT_FAILURE);
+        }
+    }
+
+    /*
     if (argc != 2) {
         fprintf(stderr, "%s: Usage: %s <elf_executable>\n", argv[0], argv[0]);
         exit(EXIT_FAILURE);
     }
+    */
 
-    int fd = open(argv[1], O_RDONLY);
+    int fd = open(argv[argc - 1], O_RDONLY);
 
     if (fd < 0) {
         fprintf(stderr, "%s: Can not open file %s\n", argv[0], argv[1]);
@@ -109,11 +171,19 @@ int main(int argc, char *argv[]) {
             print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
         } else if (section_program_and_read_only(section_header)) {
             print_section_data(section_header, section_data);
+        } else {
+            print_section_data(section_header, section_data);
         }
         free(section_data);
     }
     printf("\n");
     free(section_names);
+
+    if (entropy_flag) {
+        float entropy = calculate_fd_entropy(fd);
+        printf("\nEntropy: %f bits per byte\n", entropy);
+    }
+
     close(fd);
     return 0;
 }

@@ -51,8 +51,21 @@ unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
     return section_data;
 }
 
+void get_section_flags_string(char* flags_string, Elf64_Shdr section_header) {
+    if (section_header.sh_flags & SHF_WRITE)
+        flags_string[0] = 'w';
+    if (section_header.sh_flags & SHF_ALLOC)
+        flags_string[1] = 'a';
+    if (section_header.sh_flags & SHF_EXECINSTR)
+        flags_string[2] = 'x';
+}
+
+
 void print_section_header(char* section_names, Elf64_Shdr section_header) {
     printf("\n\x1b[1;32m%s\x1b[0m ", section_names + section_header.sh_name);
+    char flags_string[4] = "---";
+    get_section_flags_string(flags_string, section_header);
+    printf("\x1b[1m%s\x1b[0m ", flags_string);
     printf("0x%lx ", (unsigned long)section_header.sh_addr);
     printf("Size: %ld\n\n", (unsigned long)section_header.sh_size);
 }

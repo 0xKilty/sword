@@ -2,7 +2,7 @@ CC=gcc
 
 CCFLAGS=-Wall -O3
 
-LIBRARIES=-lcapstone
+LIBRARIES=-lcapstone -lm
 
 sword: sword.o elf_stuff.o
 	$(CC) $(CCFLAGS) $^ $(LIBRARIES) -o $@
