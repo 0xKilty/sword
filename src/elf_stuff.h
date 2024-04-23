@@ -15,6 +15,7 @@ char* get_section_names(int fd, Elf64_Shdr section_header);
 unsigned char* read_section_data(int fd, Elf64_Shdr section_header);
 void print_section_header(char* section_names, Elf64_Shdr section_header);
 void print_section_data(Elf64_Shdr section_header, unsigned char* section_data);
+void print_section_raw(Elf64_Shdr section_header, unsigned char* section_data);
 
 bool section_program_and_executable(Elf64_Shdr section_header);
 bool section_program_and_writable(Elf64_Shdr section_header);

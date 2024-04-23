@@ -71,6 +71,16 @@ void print_section_header(char* section_names, Elf64_Shdr section_header) {
 }
 
 void print_section_data(Elf64_Shdr section_header, unsigned char* section_data) {
+    if (section_program_and_executable(section_header)) {
+        print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
+    } else if (section_program_and_read_only(section_header)) {
+        print_section_raw(section_header, section_data);
+    } else {
+        print_section_raw(section_header, section_data);
+    }
+}
+
+void print_section_raw(Elf64_Shdr section_header, unsigned char* section_data) {
     /*
     for (int i = 0; i < section_header.sh_size; i++) {
         printf("0x%lx: ", (unsigned long)section_header.sh_addr + (i * 8));
