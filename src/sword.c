@@ -43,9 +43,9 @@ TODO (Maybe):
 #include <unistd.h>
 #include <string.h>
 #include <elf.h>
-#include <math.h>
 #include <capstone/capstone.h>
 #include "elf_stuff.h"
+#include "entropy.h"
 
 #define ENTROPY_BUFFER_SIZE 256
 
@@ -78,8 +78,12 @@ void print_section_disassembly(unsigned char* section_data, size_t size, unsigne
         exit(EXIT_FAILURE);
     }
 
+    int flavor = CS_OPT_SYNTAX_ATT;
+    cs_option(capstone_handle, CS_OPT_SYNTAX, flavor);
+
     cs_insn *insn;
     size_t count = cs_disasm(capstone_handle, section_data, size, addr, 0, &insn);
+
     if (count > 0) {
         for (size_t i = 0; i < count; i++)
            print_disassembly_line(insn[i], i);
@@ -92,29 +96,26 @@ void print_section_disassembly(unsigned char* section_data, size_t size, unsigne
     cs_close(&capstone_handle);
 }
 
-float calculate_entropy(int* occurrences, int total_count) {
-    float entropy = 0;
-    for (int i = 0; i < ENTROPY_BUFFER_SIZE; i++) {
-        float probability = (float)occurrences[i] / total_count;
-        if (probability > 0)
-            entropy += probability * log2f(probability);
-    }
-    return -entropy;
-}
+void print_disassembly(int fd, int disassembly_flavor) {
+    Elf64_Ehdr elf_header = read_elf_header(fd);
+    printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
 
-float calculate_fd_entropy(int fd) {
-    char byte;
-    int occurrences[ENTROPY_BUFFER_SIZE] = {0};
-    int total_count = 0;
-    ssize_t bytesRead;
+    Elf64_Shdr section_header = read_section_header(fd, elf_header);
+    char* section_names = get_section_names(fd, section_header);
+    
+    for (int i = 0; i < elf_header.e_shnum; i++) {
+        lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
+        read(fd, &section_header, sizeof(section_header));
 
-    lseek(fd, 0, SEEK_SET);
-    while ((bytesRead = read(fd, &byte, 1)) > 0) {
-        occurrences[(unsigned char)byte]++;
-        total_count++;
+        unsigned char* section_data = read_section_data(fd, section_header);
+
+        if (section_program_and_executable(section_header)) {
+            print_section_header(section_names, section_header);
+            print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
+        }
+        
+        free(section_data);
     }
-    lseek(fd, 0, SEEK_SET);
-    return calculate_entropy(occurrences, total_count);
 }
 
 void print_logo() {
@@ -133,7 +134,7 @@ int main(int argc, char *argv[]) {
     int opt;
     char entropy_flag = 0;
     char disassembly_flag = 0;
-    char *disassembly_syntax = "intel";
+    int disassembly_flavor = "intel";
 
     while ((opt = getopt(argc, argv, "lef:dsh")) != -1) {
         switch (opt) {
@@ -147,51 +148,41 @@ int main(int argc, char *argv[]) {
                 disassembly_flag = 1;
                 break;
             case 'f':
-                disassembly_syntax = optarg;
+                if (strcmp(optarg, "intel") != 0) {
+                    disassembly_flavor = CS_OPT_SYNTAX_INTEL;
+                } else if (strcmp(optarg, "att") != 0) {
+                    disassembly_flavor = CS_OPT_SYNTAX_ATT;
+                } else {
+                    fprintf(stderr, "%s: %s is not a valid disassembly flavor (intel|att)\n", argv[0], optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
             case 's':
                 printf("Option 's'\n");
                 break;
             case 'h':
             case '?':
-                fprintf(stderr, "%s Usage:\n", argv[0], argv[0]);
-                fprintf(stderr, "\t-h Show the help message\n");
-                fprintf(stderr, "\t-e Show the file entropy\n");
-                fprintf(stderr, "\t-d Show disassembly\n");
-                fprintf(stderr, "\t-l Show logo\n");
-                fprintf(stderr, "\t-s <section> Show section data\n");
+                fprintf(stderr, "%s Usage:\n", argv[0]);
+                fprintf(stderr, "\t-h Print the help message\n");
+                fprintf(stderr, "\t-e Print the file entropy\n");
+                fprintf(stderr, "\t-d Print disassembly\n");
+                fprintf(stderr, "\t-l Print logo\n");
+                fprintf(stderr, "\t-s <section> Print section data\n");
                 exit(EXIT_FAILURE);
         }
-    }
-
-    if (disassembly_flag && disassembly_syntax == NULL) {
-        disassembly_syntax = "intel";
     }
 
     program_name = argv[0];
     int fd = open_file(argv[argc - 1]);
 
     if (disassembly_flag) {
-        Elf64_Ehdr elf_header = read_elf_header(fd);
-        printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
-
-        Elf64_Shdr section_header = read_section_header(fd, elf_header);
-        char* section_names = get_section_names(fd, section_header);
-        
-        for (int i = 0; i < elf_header.e_shnum; i++) {
-            lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
-            read(fd, &section_header, sizeof(section_header));
-
-            unsigned char* section_data = read_section_data(fd, section_header);
-
-            if (section_program_and_executable(section_header)) {
-                print_section_header(section_names, section_header);
-                print_section_disassembly(section_data, section_header.sh_size, section_header.sh_addr);
-            }
-            
-            free(section_data);
-        }
-    } else {
+        print_disassembly(fd, disassembly_flavor);
+    } 
+    
+    if (entropy_flag) {
+        float entropy = calculate_fd_entropy(fd);
+        printf("\nEntropy: %f bits per byte\n", entropy);
+    } else if (1 == 2) {
         Elf64_Ehdr elf_header = read_elf_header(fd);
         printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
 
@@ -232,12 +223,6 @@ int main(int argc, char *argv[]) {
 
         printf("\n");
         free(section_names);
-    }
-    
-
-    if (entropy_flag) {
-        float entropy = calculate_fd_entropy(fd);
-        printf("\nEntropy: %f bits per byte\n", entropy);
     }
 
     close(fd);

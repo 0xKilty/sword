@@ -1,16 +1,17 @@
 CC=gcc
-
 CCFLAGS=-Wall -O3
-
 LIBRARIES=-lcapstone -lm
 
-sword: sword.o elf_stuff.o
+sword: sword.o elf_stuff.o entropy.o
 	$(CC) $(CCFLAGS) $^ $(LIBRARIES) -o $@
 
-sword.o: sword.c elf_stuff.h
+sword.o: sword.c elf_stuff.h entropy.h
 	$(CC) $(CCFLAGS) -c $<
 
 elf_stuff.o: elf_stuff.c elf_stuff.h
+	$(CC) $(CCFLAGS) -c $<
+
+entropy.o: entropy.c entropy.h
 	$(CC) $(CCFLAGS) -c $<
 
 clean:
