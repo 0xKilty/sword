@@ -46,9 +46,9 @@ TODO (Maybe):
 #include <capstone/capstone.h>
 #include "elf_stuff.h"
 #include "entropy.h"
+#include "user_interaction.h"
 
-#define ENTROPY_BUFFER_SIZE 256
-
+typedef void (*section_processor)(Elf64_Ehdr, Elf64_Shdr, int);
 const char *program_name;
 
 int open_file(char* filename) {
@@ -95,52 +95,76 @@ void print_section_disassembly(unsigned char* section_data, size_t size, unsigne
     cs_close(&capstone_handle);
 }
 
-void print_disassembly(int fd, int disassembly_flavor) {
+void iterate_sections(int fd, section_processor process_section) {
     Elf64_Ehdr elf_header = read_elf_header(fd);
-    printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
-
     Elf64_Shdr section_header = read_section_header(fd, elf_header);
     char* section_names = get_section_names(fd, section_header);
-
-    char* dynstr_data = NULL;
-    Elf64_Shdr dynsym_header;
-    Elf64_Sym* dynsym_symbols = NULL;
-    int num_dynsym_symbols = 0;
 
     for (int i = 0; i < elf_header.e_shnum; i++) {
         lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
         read(fd, &section_header, sizeof(section_header));
+        unsigned char* section_data = read_section_data(fd, section_header);
 
+        process_section(elf_header, section_header, fd);
+        
+        free(section_data);
+    }
+}
+
+struct dynamic_data {
+    char* dynstr_data;
+    Elf64_Shdr dynsym_header;
+    Elf64_Sym* dynsym_symbols;
+    int num_dynsym_symbols;
+};
+
+struct dynamic_data *get_dynamic_data(int fd, Elf64_Ehdr elf_header, Elf64_Shdr section_header, char* section_names) {
+    struct dynamic_data *dyn_data = malloc(sizeof(struct dynamic_data));
+    for (int i = 0; i < elf_header.e_shnum; i++) {
+        lseek(fd, elf_header.e_shoff + i * sizeof(section_header), SEEK_SET);
+        read(fd, &section_header, sizeof(section_header));
         unsigned char* section_data = read_section_data(fd, section_header);
 
         if (strcmp(&section_names[section_header.sh_name], ".dynstr") == 0) {
-            dynstr_data = malloc(section_header.sh_size);
-            memcpy(dynstr_data, section_data, section_header.sh_size);
+            dyn_data->dynstr_data = malloc(section_header.sh_size);
+            memcpy(dyn_data->dynstr_data, section_data, section_header.sh_size);
         } else if (strcmp(&section_names[section_header.sh_name], ".dynsym") == 0) {
-            dynsym_header = section_header;
-            num_dynsym_symbols = section_header.sh_size / sizeof(Elf64_Sym);
-            dynsym_symbols = malloc(section_header.sh_size);
-            memcpy(dynsym_symbols, section_data, section_header.sh_size);
+            dyn_data->dynsym_header = section_header;
+            dyn_data->num_dynsym_symbols = section_header.sh_size / sizeof(Elf64_Sym);
+            dyn_data->dynsym_symbols = malloc(section_header.sh_size);
+            memcpy(dyn_data->dynsym_symbols, section_data, section_header.sh_size);
         }
         
         free(section_data);
     }
+    return dyn_data;
+}
 
-    if (dynsym_symbols != NULL && dynstr_data != NULL) {
+void print_disassembly(int fd, int disassembly_flavor) {
+    Elf64_Ehdr elf_header = read_elf_header(fd);
+    //printf("Entry point address: 0x%lx\n", (unsigned long)elf_header.e_entry);
+
+    Elf64_Shdr section_header = read_section_header(fd, elf_header);
+    char* section_names = get_section_names(fd, section_header);
+
+    struct dynamic_data *dyn_data = get_dynamic_data(fd, elf_header, section_header, section_names);
+
+    if (dyn_data->dynsym_symbols != NULL && dyn_data->dynstr_data != NULL) {
         printf(".dynsym Data:\n");
-        for (int j = 0; j < num_dynsym_symbols; j++) {
+        for (int j = 0; j < dyn_data->num_dynsym_symbols; j++) {
             printf("Symbol %d:\n", j);
-            printf("Name: %s\n", dynstr_data + dynsym_symbols[j].st_name);
-            printf("Value: 0x%lx\n", dynsym_symbols[j].st_value);
-            printf("Size: %lu\n", dynsym_symbols[j].st_size);
-            printf("Binding: %d\n", ELF64_ST_BIND(dynsym_symbols[j].st_info));
-            printf("Type: %d\n", ELF64_ST_TYPE(dynsym_symbols[j].st_info));
+            printf("Name: %s\n", dyn_data->dynstr_data + dyn_data->dynsym_symbols[j].st_name);
+            printf("Value: 0x%lx\n", dyn_data->dynsym_symbols[j].st_value);
+            printf("Size: %lu\n",  dyn_data->dynsym_symbols[j].st_size);
+            printf("Binding: %d\n", ELF64_ST_BIND(dyn_data->dynsym_symbols[j].st_info));
+            printf("Type: %d\n", ELF64_ST_TYPE(dyn_data->dynsym_symbols[j].st_info));
             printf("\n");
         }
     }
 
-    free(dynstr_data);
-    free(dynsym_symbols);
+    free(dyn_data->dynstr_data);
+    free(dyn_data->dynsym_symbols);
+    free(dyn_data);
 
     csh capstone_handle;
     if (cs_open(CS_ARCH_X86, CS_MODE_64, &capstone_handle) != CS_ERR_OK) {
@@ -175,16 +199,6 @@ void print_disassembly(int fd, int disassembly_flavor) {
     cs_close(&capstone_handle);
 }
 
-void print_logo() {
-    const char* figlet = 
-        "   ______       ______  ____  ____ \n"
-        "  / ___/ |     / / __ \\/ __ \\/ __ \\\n"
-        "  \\__ \\| | /| / / / / / /_/ / / / /\n"
-        " ___/ /| |/ |/ / /_/ / _, _/ /_/ / \n"
-        "/____/ |__/|__/\\____/_/ |_/_____/  \n";
-    printf("%s\n", figlet);
-}
-
 int get_disassembly_flavor(char* string) {
     if (strcmp(optarg, "intel") == 0)
         return CS_OPT_SYNTAX_INTEL;
@@ -194,9 +208,12 @@ int get_disassembly_flavor(char* string) {
     exit(EXIT_FAILURE);
 }
 
+
+
 extern char *optarg;
 
 int main(int argc, char *argv[]) {
+    program_name = argv[0];
     int opt;
     char entropy_flag = 0;
     char disassembly_flag = 0;
@@ -221,18 +238,11 @@ int main(int argc, char *argv[]) {
                 break;
             case 'h':
             case '?':
-                fprintf(stderr, "%s Usage:\n", argv[0]);
-                fprintf(stderr, "\t-h Print the help message\n");
-                fprintf(stderr, "\t-e Print the file entropy\n");
-                fprintf(stderr, "\t-d Print disassembly\n");
-                fprintf(stderr, "\t-f Set disassembly flavor [intel|att]\n");
-                fprintf(stderr, "\t-l Print logo\n");
-                fprintf(stderr, "\t-s <section> Print section data\n");
+                print_usage(program_name);
                 exit(EXIT_FAILURE);
         }
     }
 
-    program_name = argv[0];
     int fd = open_file(argv[argc - 1]);
 
     if (disassembly_flag) {
