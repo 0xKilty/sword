@@ -48,6 +48,7 @@ TODO (Maybe):
 #include "elf_stuff.h"
 #include "entropy.h"
 #include "user_interaction.h"
+#include "compression.h"
 
 const char *program_name;
 
@@ -222,15 +223,21 @@ int main(int argc, char *argv[]) {
     if (flags->disassembly_flag) {
         print_disassembly(fd, flags->disassembly_flavor);
     }
+
+    if (flags->all_flag) {
+        print_all_data(fd, flags->disassembly_flavor);
+    }
+
+    if (flags->compression_flag == 1) {
+        inflate(fd);
+    } else if (flags->compression_flag == 2) {
+        compress(fd);
+    }
     
     if (flags->entropy_flag) {
         float entropy = calculate_fd_entropy(fd);
         printf("\nEntropy: %f bits per byte\n", entropy);
     } 
-    
-    if (flags->all_flag) {
-        print_all_data(fd, flags->disassembly_flavor);
-    }
 
     free(flags);
     close(fd);

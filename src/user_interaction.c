@@ -37,21 +37,11 @@ int get_disassembly_flavor(char* string) {
     exit(EXIT_FAILURE);
 }
 
-void handle_compression(struct program_flags *flags, char* string, int option) {
-    if (flags->compression_flag) {
-        fprintf(stderr, "Please choose either to decompress or compress\n");
-        free(flags);
-        exit(EXIT_FAILURE);
-    }
-    flags->compression_flag = 1;
-    flags->output_file = string;
-}
-
 struct program_flags *get_flags(int argc, char *argv[]) {
     int opt;
     struct program_flags *flags = malloc(sizeof(struct program_flags));
     extern char *optarg;
-    while ((opt = getopt(argc, argv, "lef:dshc:i:a")) != -1) {
+    while ((opt = getopt(argc, argv, "lef:dshcia")) != -1) {
         switch (opt) {
             case 'l':
                 print_logo();
@@ -72,10 +62,10 @@ struct program_flags *get_flags(int argc, char *argv[]) {
                 flags->all_flag = 1;
                 break;
             case 'i':
-                handle_compression(flags, optarg, 1);
+                flags->compression_flag = 1;
                 break;
             case 'c':
-                handle_compression(flags, optarg, 2);
+                flags->compression_flag = 2;
                 break;
             case 'h':
             case '?':
