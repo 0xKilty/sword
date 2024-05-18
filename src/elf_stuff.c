@@ -51,23 +51,46 @@ unsigned char* read_section_data(int fd, Elf64_Shdr section_header) {
     return section_data;
 }
 
+void get_section_flags_string(char* flags_string, Elf64_Shdr section_header) {
+    if (section_header.sh_flags & SHF_WRITE)
+        flags_string[0] = 'w';
+    if (section_header.sh_flags & SHF_ALLOC)
+        flags_string[1] = 'a';
+    if (section_header.sh_flags & SHF_EXECINSTR)
+        flags_string[2] = 'x';
+}
+
+
 void print_section_header(char* section_names, Elf64_Shdr section_header) {
-    printf("\n%s 0x%lx\n\n", section_names + section_header.sh_name, (unsigned long)section_header.sh_addr);
+    printf("\n\x1b[1;32m%s\x1b[0m ", section_names + section_header.sh_name);
+    char flags_string[4] = "---";
+    get_section_flags_string(flags_string, section_header);
+    printf("\x1b[1m%s\x1b[0m ", flags_string);
+    printf("0x%lx ", (unsigned long)section_header.sh_addr);
+    printf("Size: %ld\n\n", (unsigned long)section_header.sh_size);
 }
 
 void print_section_data(Elf64_Shdr section_header, unsigned char* section_data) {
-    /*
-    for (int i = 0; i < section_header.sh_size; i++) {
-        printf("0x%lx: ", (unsigned long)section_header.sh_addr + (i * 8));
-        for (int j = 0; j < 8; j++) {
-            printf("%02x ", section_data[i * j]);
+    for (int i = 0; i < section_header.sh_size; i += 16) {
+        printf("\n0x%08lx: ", (unsigned long)section_header.sh_addr + i);
+        for (int j = 0; j < 16 && i + j < section_header.sh_size; j++) {
+            printf("%02x ", section_data[i + j]);
         }
-        printf("\n");
+        for (int j = 0; j < 16 - (section_header.sh_size - i < 16 ? section_header.sh_size - i : 16); j++) {
+            printf("   ");
+        }
+        printf("|");
+        for (int j = 0; j < 16 && i + j < section_header.sh_size; j++) {
+            char c = section_data[i + j];
+            if (c >= 32 && c <= 126) {
+                printf("%c", c);
+            } else {
+                printf(".");
+            }
+        }
+        printf("|");
     }
-    */
-    for (int i = 0; i < section_header.sh_size; i++) {
-        printf("%c", section_data[i]);
-    }
+    printf("\n");
 }
 
 bool section_program_and_executable(Elf64_Shdr section_header) {
